@@ -112,12 +112,12 @@ impl SysctlConfigLoader {
         let mut map = SysctlConfig::new();
         for line in reader.lines() {
             let line = line?;
-            self.insert_entry_of_line(&mut map, line)?;
+            self.insert_entry_of_line(&mut map, line.as_str())?;
         }
         Ok(map)
     }
 
-    fn insert_entry_of_line<'a>(self: &Self, map: &mut SysctlConfig, line: String) -> Result<()> {
+    fn insert_entry_of_line<'a>(self: &Self, map: &mut SysctlConfig, line: &str) -> Result<()> {
         let mut line = line;
         if line.is_empty() {
             return Ok(());
@@ -128,7 +128,7 @@ impl SysctlConfigLoader {
         }
 
         let error_or_ignore = if line.starts_with("-") {
-            line.remove(0);
+            line = &line[1..];
             |_| Ok(())
         } else {
             |s| Err(Error::msg(s))
