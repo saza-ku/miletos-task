@@ -69,7 +69,7 @@ impl SysctlConfigLoader {
         Ok(schema)
     }
 
-    fn insert_schema_of_line<'a>(schema: &mut Vec<SysctlConfigSchema>, line: String) -> Result<()> {
+    fn insert_schema_of_line(schema: &mut Vec<SysctlConfigSchema>, line: String) -> Result<()> {
         let mut line = line;
         if line.is_empty() {
             return Ok(());
@@ -117,7 +117,7 @@ impl SysctlConfigLoader {
         Ok(map)
     }
 
-    fn insert_entry_of_line<'a>(self: &Self, map: &mut SysctlConfig, line: &str) -> Result<()> {
+    fn insert_entry_of_line(self: &Self, map: &mut SysctlConfig, line: &str) -> Result<()> {
         let mut line = line;
         if line.is_empty() {
             return Ok(());
