@@ -70,26 +70,15 @@ impl SysctlConfigLoader {
     }
 
     fn insert_schema_of_line(schema: &mut Vec<SysctlConfigSchema>, line: String) -> Result<()> {
-        let mut line = line;
         if line.is_empty() {
             return Ok(());
         }
 
-        if line.starts_with("#") || line.starts_with(";") {
-            return Ok(());
-        }
-
-        let error_or_ignore = if line.starts_with("-") {
-            line.remove(0);
-            |_| Ok(())
-        } else {
-            |s| Err(Error::msg(s))
-        };
-
         let parts: Vec<&str> = line.splitn(2, "->").collect();
         if parts.len() != 2 {
-            return error_or_ignore("invalid line");
+            return Err(Error::msg("invalid line"));
         }
+
         let key = parts[0].trim();
         let value = parts[1].trim();
 
