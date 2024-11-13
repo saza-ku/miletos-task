@@ -54,38 +54,8 @@ impl SysctlConfigLoader {
         let file = std::fs::read_to_string(path).unwrap();
         let r = BufReader::new(Cursor::new(file));
         let r = BufReader::new(r);
-        let schema = Self::load_sysctl_schema_from_reader(r).unwrap();
+        let schema = load_sysctl_schema_from_reader(r).unwrap();
         Self { schema }
-    }
-
-    fn load_sysctl_schema_from_reader<T: Read>(
-        reader: BufReader<T>,
-    ) -> Result<Vec<SysctlConfigSchema>> {
-        let mut schema = vec![];
-        for line in reader.lines() {
-            let line = line?;
-            Self::insert_schema_of_line(&mut schema, line)?;
-        }
-        Ok(schema)
-    }
-
-    fn insert_schema_of_line(schema: &mut Vec<SysctlConfigSchema>, line: String) -> Result<()> {
-        if line.is_empty() {
-            return Ok(());
-        }
-
-        let parts: Vec<&str> = line.splitn(2, "->").collect();
-        if parts.len() != 2 {
-            return Err(Error::msg("invalid line"));
-        }
-
-        let key = parts[0].trim();
-        let value = parts[1].trim();
-
-        let schema_elem = SysctlConfigSchema::new(key.to_string(), value.to_string())?;
-        schema.push(schema_elem);
-
-        Ok(())
     }
 
     pub fn load_sysctl(self: &Self, path: &str) -> Result<SysctlConfig> {
@@ -97,69 +67,8 @@ impl SysctlConfigLoader {
         Ok(result)
     }
 
-    fn load_sysctl_from_reader<T: Read>(self: &Self, reader: BufReader<T>) -> Result<SysctlConfig> {
-        let mut map = SysctlConfig::new();
-        for line in reader.lines() {
-            let line = line?;
-            self.insert_entry_of_line(&mut map, line.as_str())?;
-        }
-        Ok(map)
-    }
-
-    fn insert_entry_of_line(self: &Self, map: &mut SysctlConfig, line: &str) -> Result<()> {
-        let mut line = line;
-        if line.is_empty() {
-            return Ok(());
-        }
-
-        if line.starts_with("#") || line.starts_with(";") {
-            return Ok(());
-        }
-
-        let error_or_ignore = if line.starts_with("-") {
-            line = &line[1..];
-            |_| Ok(())
-        } else {
-            |s| Err(Error::msg(s))
-        };
-
-        let parts: Vec<&str> = line.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return error_or_ignore("invalid line");
-        }
-        let key = parts[0].trim();
-        let value = parts[1].trim();
-        if key.is_empty() || value.is_empty() || key.contains(' ') {
-            return error_or_ignore("invalid line");
-        }
-
-        let keys = key.split('.').collect::<Vec<&str>>();
-
-        let mut m = map;
-        for i in 0..keys.len() {
-            let key = keys[i];
-            if i == keys.len() - 1 {
-                m.insert(
-                    key.to_string(),
-                    SysctlConfigValue::String(value.to_string()),
-                );
-            } else {
-                let next_m = m
-                    .entry(key.to_string())
-                    .or_insert_with(|| SysctlConfigValue::SysctlConfig(SysctlConfig::new()));
-                if let SysctlConfigValue::SysctlConfig(next_m) = next_m {
-                    m = next_m;
-                } else {
-                    return error_or_ignore("invalid line");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn validate(self: &Self, m: &SysctlConfig) -> Result<()> {
-        let mut keys = Self::get_all_keys(m);
+        let mut keys = get_all_keys(m);
         for schema in self.schema.iter() {
             keys.remove(&schema.key);
         }
@@ -256,24 +165,115 @@ impl SysctlConfigLoader {
         Ok(())
     }
 
-    fn get_all_keys(m: &SysctlConfig) -> HashSet<String> {
-        let mut keys = HashSet::new();
-        Self::insert_key(m, "", &mut keys);
-        keys
+    fn load_sysctl_from_reader<T: Read>(self: &Self, reader: BufReader<T>) -> Result<SysctlConfig> {
+        let mut map = SysctlConfig::new();
+        for line in reader.lines() {
+            let line = line?;
+            self.insert_entry_of_line(&mut map, line.as_str())?;
+        }
+        Ok(map)
     }
 
-    fn insert_key(m: &SysctlConfig, prev_key: &str, set: &mut HashSet<String>) -> () {
-        for (k, v) in m.iter() {
-            let key = if prev_key == "" {
-                k.to_string()
+    fn insert_entry_of_line(self: &Self, map: &mut SysctlConfig, line: &str) -> Result<()> {
+        let mut line = line;
+        if line.is_empty() {
+            return Ok(());
+        }
+
+        if line.starts_with("#") || line.starts_with(";") {
+            return Ok(());
+        }
+
+        let error_or_ignore = if line.starts_with("-") {
+            line = &line[1..];
+            |_| Ok(())
+        } else {
+            |s| Err(Error::msg(s))
+        };
+
+        let parts: Vec<&str> = line.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return error_or_ignore("invalid line");
+        }
+        let key = parts[0].trim();
+        let value = parts[1].trim();
+        if key.is_empty() || value.is_empty() || key.contains(' ') {
+            return error_or_ignore("invalid line");
+        }
+
+        let keys = key.split('.').collect::<Vec<&str>>();
+
+        let mut m = map;
+        for i in 0..keys.len() {
+            let key = keys[i];
+            if i == keys.len() - 1 {
+                m.insert(
+                    key.to_string(),
+                    SysctlConfigValue::String(value.to_string()),
+                );
             } else {
-                format!("{}.{}", prev_key, k)
-            };
-            if let SysctlConfigValue::SysctlConfig(v) = v {
-                Self::insert_key(v, &key, set);
-            } else {
-                set.insert(key.to_string());
+                let next_m = m
+                    .entry(key.to_string())
+                    .or_insert_with(|| SysctlConfigValue::SysctlConfig(SysctlConfig::new()));
+                if let SysctlConfigValue::SysctlConfig(next_m) = next_m {
+                    m = next_m;
+                } else {
+                    return error_or_ignore("invalid line");
+                }
             }
+        }
+
+        Ok(())
+    }
+}
+
+fn load_sysctl_schema_from_reader<T: Read>(
+    reader: BufReader<T>,
+) -> Result<Vec<SysctlConfigSchema>> {
+    let mut schema = vec![];
+    for line in reader.lines() {
+        let line = line?;
+        insert_schema_of_line(&mut schema, line)?;
+    }
+    Ok(schema)
+}
+
+fn insert_schema_of_line(schema: &mut Vec<SysctlConfigSchema>, line: String) -> Result<()> {
+    if line.is_empty() {
+        return Ok(());
+    }
+
+    let parts: Vec<&str> = line.splitn(2, "->").collect();
+    if parts.len() != 2 {
+        return Err(Error::msg("invalid line"));
+    }
+
+    let key = parts[0].trim();
+    let value = parts[1].trim();
+
+    let schema_elem = SysctlConfigSchema::new(key.to_string(), value.to_string())?;
+    schema.push(schema_elem);
+
+    Ok(())
+}
+
+fn get_all_keys(m: &SysctlConfig) -> HashSet<String> {
+    let mut keys = HashSet::new();
+    insert_key(m, "", &mut keys);
+    keys
+}
+
+fn insert_key(m: &SysctlConfig, prev_key: &str, set: &mut HashSet<String>) -> () {
+    for (k, v) in m.iter() {
+        let key = if prev_key == "" {
+            k.to_string()
+        } else {
+            format!("{}.{}", prev_key, k)
+        };
+        if let SysctlConfigValue::SysctlConfig(v) = v {
+            insert_key(v, &key, set);
+        } else {
+            set.insert(key.to_string());
         }
     }
 }
